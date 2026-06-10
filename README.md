@@ -1,11 +1,14 @@
 # cor-fem
 
-to my known, this is the first non-linear fem algorithm for non-rigid registration 
+A FEM algorithm for non-rigid registration
 
-platform: Ubuntu. 
+
+To my known, this is the first non-linear fem algorithm for non-rigid registration 
+
+
+Platform: Ubuntu. 
   if you want to run on windows, it is also allowed. but before you run code, please forbiden blender founction
 
-a FEM algorithm for non-rigid registration
 
 volume2mesh.py:
   for getting mesh form 3d volume, such as nii, nii.gz, nrrd, etc.
