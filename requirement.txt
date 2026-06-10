@@ -1,7 +1,7 @@
 torch
 vtk
 pyvista
-blender
+blender(optional for windows platform)
 scipy
 tetgen
 open3d
