@@ -25,8 +25,13 @@ Now, I only release the parameters of Prostate
 
 
 Contributors: 
+
 (SDU) Shixing Ma, Chunna Yang, Zhe Min;
+
 (Xi'dian) Yuhao Wei;
+
 (TJU) Zhaoxi Lin;
+
 (NTU) Shuwei Shao;
+
 (McGill) Yanting Zhou;
