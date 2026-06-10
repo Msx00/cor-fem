@@ -1,4 +1,6 @@
 # cor-fem
+platform: Ubuntu
+  if you want to run on windows, it is also allowed. but before you run code, please forbiden blender code
 
 a FEM algorithm for non-rigid registration
 
