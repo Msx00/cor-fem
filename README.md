@@ -22,7 +22,9 @@ For registration command:
 bash cor-fem-prostate.sh
 
 
-Now, I only release the parameters of Prostate
+
+
+Now, I only release the parameters for Prostate
 
 
 Contributors: 
