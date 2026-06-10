@@ -2,7 +2,7 @@
 
 **Cor-FEM** is a FEM-based algorithm for non-rigid medical image registration.
 
-To the best of our knowledge, this is one of the first non-linear FEM algorithms designed for non-rigid registration in this setting.
+To the best of my (Shixing's) knowledge, this is one of the first non-linear FEM algorithms designed for non-rigid registration in this setting.
 
 <p align="center">
   <b>3D Volume → Surface Mesh → Mesh Smoothing → Non-rigid Registration by Cor-FEM</b>
