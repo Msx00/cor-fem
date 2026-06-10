@@ -3,7 +3,7 @@
 A FEM algorithm for non-rigid registration
 
 
-To my known, this is the first non-linear fem algorithm for non-rigid registration 
+To my known, this is the first non-linear FEM algorithm for non-rigid registration 
 
 
 Platform: Ubuntu. 
