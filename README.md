@@ -1,4 +1,7 @@
 # cor-fem
+
+to my known, this is the first non-linear fem algorithm for non-rigid registration 
+
 platform: Ubuntu. 
   if you want to run on windows, it is also allowed. but before you run code, please forbiden blender founction
 
