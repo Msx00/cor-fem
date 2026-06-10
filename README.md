@@ -5,7 +5,7 @@
 To the best of our knowledge, this is one of the first non-linear FEM algorithms designed for non-rigid registration in this setting.
 
 <p align="center">
-  <b>3D Volume → Surface Mesh → Mesh Smoothing → FEM-based Non-rigid Registration</b>
+  <b>3D Volume → Surface Mesh → Mesh Smoothing → Non-rigid Registration by Cor-FEM</b>
 </p>
 
 ---
