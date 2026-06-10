@@ -18,7 +18,8 @@ mesh_smooth.py:
 
 
 For registration:
-run: bash cor-fem-prostate.sh
+
+bash cor-fem-prostate.sh
 
 
 Now, I only release the parameters of Prostate
