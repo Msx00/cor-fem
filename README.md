@@ -51,6 +51,12 @@ Windows is also allowed, but before running the code on Windows, please disable 
 
 ---
 
+## Registration Comparison
+
+<p align="center">
+  <img src="assets/registration-comparison-1.png" width="850">
+</p>
+
 ## Main Scripts
 
 | File                  | Description                                                                          |
