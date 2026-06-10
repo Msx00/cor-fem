@@ -1,3 +1,3 @@
 # cor-fem
 
-a algorithm for non-rigid registration
+a FEM algorithm for non-rigid registration
