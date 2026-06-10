@@ -101,6 +101,9 @@ More organ-specific parameter settings will be added later, including:
 
 ---
 
+## 3D Volume Registration
+The method will be updated soon.
+
 ## Notes
 
 * The current version is mainly designed for research use.
