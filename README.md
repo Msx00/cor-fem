@@ -124,7 +124,7 @@ The method will be updated soon.
 
 ## Contributors
 
-* **Shixing Ma**, Chunna Yang, Zhe Min — Shandong University, SDU
+* **Shixing Ma** — Shandong University, SDU
 * **Yuhao Wei** — Xidian University
 * **Zhaoxi Lin** — Tianjin University, TJU
 * **Shuwei Shao** — Nanyang Technological University, NTU
