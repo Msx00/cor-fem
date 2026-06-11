@@ -22,7 +22,7 @@ Input 3D Volume
 volume2mesh.py
       │
       ▼
-Initial Surface Mesh
+Initial Surface Mesh (STL, OBJ, PLY, OFF, etc..)
       │
       ▼
 mesh_smooth.py
