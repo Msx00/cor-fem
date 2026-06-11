@@ -16,25 +16,25 @@ Cor-FEM performs non-rigid registration using a finite element method (FEM).
 The current released configuration mainly supports **prostate registration**. More organ-specific parameters will be added in future updates.
 
 ```text
-Input 3D Volume
-      │
-      ▼
-volume2mesh.py
-      │
-      ▼
-Initial Surface Mesh (STL, OBJ, PLY, OFF, etc..)
-      │
-      ▼
-mesh_smooth.py
-      │
-      ▼
-Smoothed Mesh
-      │
-      ▼
-cor-fem-prostate.sh
-      │
-      ▼
-Registered Result
+          Input 3D Volume
+                │
+                ▼
+          volume2mesh.py
+                │
+                ▼
+          Initial Surface Mesh
+                │
+                ▼
+          mesh_smooth.py
+                │
+                ▼
+          Smoothed Mesh (STL, OBJ, PLY, OFF, etc..)
+                │
+                ▼
+          cor-fem-prostate.sh
+                │
+                ▼
+          Registered Result
 ```
 
 ---
