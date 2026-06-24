@@ -65,9 +65,9 @@ Average runtime of different FEM registration methods on the **μ-RegPro** datas
 | -------- | ------: | --------------: | --------------------------------------------------: | -------------: |
 | Time (s) |   53.54 |          128.25 |                                              272.29 |      **35.26** |
 
-The original CPU version: [fast-GMM-FEM](https://github.com/siavashk/GMM-FEM)
+The original CPU version: [GMM-FEM](https://github.com/siavashk/GMM-FEM)
 
-The original CPU version: [fast-BCF-FEM](https://github.com/zixinyang9109/BCF-FEM)
+The original CPU version: [BCF-FEM](https://github.com/zixinyang9109/BCF-FEM)
 
 ## Main Scripts
 
