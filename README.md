@@ -61,7 +61,7 @@ Windows is also allowed, but before running the code on Windows, please disable 
 
 Average runtime of different FEM registration methods on the **μ-RegPro** dataset.
 
-| Method   | [GMM-FEM](https://github.com/siavashk/GMM-FEM) | [Adjoint-elastic](https://github.com/gmestdagh/adjoint-elastic-registration) | [BCF-FEM](https://github.com/zixinyang9109/BCF-FEM) | COR-FEM (Ours) |
+| Method   | [GMM-FEM(gpu)](https://github.com/siavashk/GMM-FEM) | [Adjoint-elastic](https://github.com/gmestdagh/adjoint-elastic-registration) | [BCF-FEM(gpu)](https://github.com/zixinyang9109/BCF-FEM) | COR-FEM (Ours) |
 | -------- | ------: | --------------: | --------------------------------------------------: | -------------: |
 | Time (s) |   53.54 |          128.25 |                                              272.29 |      **35.26** |
 
