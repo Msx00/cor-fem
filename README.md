@@ -128,7 +128,8 @@ The method will be updated soon.
 ## Contributors
 
 * **Shixing Ma** — Shandong University, SDU
-* **Yuhao Wei** — Xidian University
+* **Zhe Min** — Shandong University, SDU/SLAI
+* **Yuhao Wei** — Xidian University/SLAI
 * **Zhaoxi Lin** — Tianjin University, TJU
 * **Shuwei Shao** — Nanyang Technological University, NTU
 * **Yanting Zhou** — McGill University
