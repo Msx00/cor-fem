@@ -1,4 +1,4 @@
-# Cor-FEM
+# COR-FEM
 
 **COR-FEM** is a FEM-based algorithm for non-rigid medical image registration.
 
