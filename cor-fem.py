@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Standalone hybrid strict-energy COR-FEM prostate registration.
-
-This file consolidates mesh preprocessing, strict energy/gradient evaluation,
-PSD FEM-surrogate PCG, Armijo/rematching acceptance, label TRE evaluation,
-and the command-line entry point used by run.sh. No local project imports are
-required.
-"""
-
 import os
 import json
 import time
