@@ -16,7 +16,7 @@ Next update: medical image segmentation networks for prostate segmentation. The 
 <p align="center">
   <img src="picture/image-registration.png" width="500">
 </p>
-Red curve is warped mr prostate, White curve is target us prostate.
+Red curve is warped mr prostate, White curve is target us prostate, and Green curve is source mr prostate.
 
 ## Overview
 
