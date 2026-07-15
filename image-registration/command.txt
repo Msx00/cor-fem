@@ -1,0 +1,6 @@
+python .\run_fem_image_registration.py `
+  --data-root ".\test" `
+  --case case_0000 `
+  --output-root ".\outputs" `
+  --outside-mode identity `
+  --label-outside-mode zero

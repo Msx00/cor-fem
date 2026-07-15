@@ -1,0 +1,11 @@
+numpy
+scipy
+medpy
+SimpleITK
+nibabel
+scikit-image
+trimesh
+vtk
+pyvista
+tetgen
+torch
