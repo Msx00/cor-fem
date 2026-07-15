@@ -12,7 +12,7 @@ To the best of my (Shixing's) knowledge, this is one of the first non-linear FEM
 
 ## Important UPDATE
 COR-FEM now supports medical image registration in volume format. (see image-registration folder)
-The following updation is medical image segmentation~ The model is coming soon...
+The following updation is medical image segmentation (applied to prostate segmentation)~ The model is coming soon...
 
 ## Overview
 
