@@ -14,9 +14,9 @@ To the best of my (Shixing's) knowledge, this is one of the first non-linear FEM
 COR-FEM now supports medical image registration in volume format. (see image-registration folder)
 The following updation is medical image segmentation (applied to prostate segmentation)~ The model is coming soon...
 <p align="center">
-  <img src="picture/image-registration.png" width="850">
+  <img src="picture/image-registration.png" width="500">
 </p>
-
+Red curve is warped mr prostate, White curve is target us prostate.
 ## Overview
 
 Cor-FEM performs non-rigid registration using a finite element method (FEM).
