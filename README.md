@@ -5,10 +5,14 @@
 To the best of my (Shixing's) knowledge, this is one of the first non-linear FEM algorithms designed for non-rigid registration in ZBC (zero_boundary_condition) setting.
 
 <p align="center">
-  <b>3D Volume → Surface Mesh → Mesh Smoothing → Non-rigid Registration by Cor-FEM</b>
+  <b>3D Volume → Surface Mesh → Mesh Smoothing → Non-rigid Registration by COR-FEM</b>
 </p>
 
 ---
+
+## UPDATE
+COR-FEM now supports medical image registration in volume format. (see image-registration folder)
+The following updation is medical image segmentation~ The model is coming soon...
 
 ## Overview
 
