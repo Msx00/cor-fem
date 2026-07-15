@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+The command-line entry point used by run.sh. No local project imports are required.
+"""
 import os
 import json
 import time
@@ -1422,6 +1425,666 @@ def tre_stats(a: np.ndarray, b: np.ndarray):
     }
 
 
+def _surface_metrics_from_directed_distances(
+    prediction_to_target: np.ndarray,
+    target_to_prediction: np.ndarray,
+):
+    """Build resolution-normalized symmetric point-cloud surface metrics."""
+    p2t = np.asarray(prediction_to_target, dtype=np.float64).reshape(-1)
+    t2p = np.asarray(target_to_prediction, dtype=np.float64).reshape(-1)
+    if p2t.size == 0 or t2p.size == 0:
+        raise ValueError("Directed surface-distance arrays must be non-empty")
+    if not np.all(np.isfinite(p2t)) or not np.all(np.isfinite(t2p)):
+        raise ValueError("Directed surface distances contain NaN or Inf")
+
+    p2t_mean = float(p2t.mean())
+    t2p_mean = float(t2p.mean())
+    p2t_hd95 = float(np.percentile(p2t, 95))
+    t2p_hd95 = float(np.percentile(t2p, 95))
+    return {
+        # The supplied reference uses unsquared Euclidean distances. Normalize
+        # each direction by its own point count so the value is not tied to
+        # mesh resolution, then sum the two directional means.
+        "chamfer_distance": float(p2t_mean + t2p_mean),
+        "chamfer_symmetric_mean": float(0.5 * (p2t_mean + t2p_mean)),
+        "chamfer_raw_sum": float(p2t.sum() + t2p.sum()),
+        "hd95": float(max(p2t_hd95, t2p_hd95)),
+        "hd95_concat": float(np.percentile(np.concatenate((p2t, t2p)), 95)),
+        "prediction_to_target_mean": p2t_mean,
+        "target_to_prediction_mean": t2p_mean,
+        "prediction_to_target_hd95": p2t_hd95,
+        "target_to_prediction_hd95": t2p_hd95,
+        "prediction_to_target_max": float(p2t.max()),
+        "target_to_prediction_max": float(t2p.max()),
+    }
+
+
+def point_cloud_surface_metrics(prediction: np.ndarray, target: np.ndarray):
+    """Compute bidirectional unsquared CD and HD95 using scalable KD-trees.
+
+    CD is mean(prediction -> target) + mean(target -> prediction). HD95 is
+    max(P95(prediction -> target), P95(target -> prediction)). Coordinates are
+    assumed to be millimetres, so all distance-valued outputs are in mm.
+    """
+    prediction = np.asarray(prediction, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    if prediction.ndim != 2 or prediction.shape[1] != 3:
+        raise ValueError(f"prediction must have shape (N, 3), got {prediction.shape}")
+    if target.ndim != 2 or target.shape[1] != 3:
+        raise ValueError(f"target must have shape (M, 3), got {target.shape}")
+    if prediction.shape[0] == 0 or target.shape[0] == 0:
+        raise ValueError("prediction and target must be non-empty")
+    if not np.all(np.isfinite(prediction)):
+        raise ValueError("prediction contains NaN or Inf")
+    if not np.all(np.isfinite(target)):
+        raise ValueError("target contains NaN or Inf")
+
+    prediction_to_target = cKDTree(target).query(prediction, k=1)[0]
+    target_to_prediction = cKDTree(prediction).query(target, k=1)[0]
+    metrics = _surface_metrics_from_directed_distances(
+        prediction_to_target, target_to_prediction
+    )
+    metrics.update(
+        {
+            "prediction_points": int(prediction.shape[0]),
+            "target_points": int(target.shape[0]),
+            "distance_unit": "mm",
+            "distance_type": "unsquared_euclidean",
+            "chamfer_definition": "mean(prediction_to_target)+mean(target_to_prediction)",
+            "hd95_definition": "max(P95(prediction_to_target),P95(target_to_prediction))",
+        }
+    )
+    return metrics
+
+def surface_negative_jacobian_stats(
+    reference_volume_vertices: np.ndarray,
+    deformed_volume_vertices: np.ndarray,
+    tets: np.ndarray,
+    surface_vertices: np.ndarray,
+    surface_faces: np.ndarray,
+    surf_map: np.ndarray,
+    low_j_threshold: float = 0.10,
+    det_eps: float = 1e-12,
+):
+    """
+    使用四面体 FEM 网格计算 warped source surface 对应的负雅可比占比。
+
+    注意：
+    surface 三角形本身没有 3D 体积 Jacobian。因此，这里先计算每个
+    四面体的真实形变梯度：
+
+        F = Ds @ inverse(Dm)
+        J = det(F)
+
+    然后把每个 source surface 三角形与其相邻的边界四面体关联，
+    使用该四面体的 J 作为该表面三角形的 Jacobian。
+
+    Parameters
+    ----------
+    reference_volume_vertices:
+        配准前四面体网格顶点，形状 (V, 3)。
+
+    deformed_volume_vertices:
+        配准后四面体网格顶点，形状 (V, 3)。
+
+    tets:
+        四面体顶点索引，形状 (T, 4)。
+
+    surface_vertices:
+        配准前 source surface 顶点，形状 (Ns, 3)。
+
+    surface_faces:
+        source surface 三角面，使用 surface 局部索引，形状 (F, 3)。
+
+    surf_map:
+        surface 顶点到 volume 顶点的映射，形状 (Ns,)。
+
+    low_j_threshold:
+        低 Jacobian 阈值，例如 0.10。
+
+    Returns
+    -------
+    dict
+        包括全体四面体和 surface 相邻四面体的 Jacobian 统计。
+    """
+    reference_volume_vertices = np.asarray(
+        reference_volume_vertices,
+        dtype=np.float64,
+    )
+    deformed_volume_vertices = np.asarray(
+        deformed_volume_vertices,
+        dtype=np.float64,
+    )
+    tets = np.asarray(tets, dtype=np.int64)
+    surface_vertices = np.asarray(
+        surface_vertices,
+        dtype=np.float64,
+    )
+    surface_faces = np.asarray(surface_faces, dtype=np.int64)
+    surf_map = np.asarray(surf_map, dtype=np.int64)
+
+    if reference_volume_vertices.ndim != 2 or reference_volume_vertices.shape[1] != 3:
+        raise ValueError(
+            "reference_volume_vertices must have shape (V, 3), "
+            f"got {reference_volume_vertices.shape}"
+        )
+
+    if deformed_volume_vertices.shape != reference_volume_vertices.shape:
+        raise ValueError(
+            "deformed_volume_vertices must have the same shape as "
+            f"reference_volume_vertices: {reference_volume_vertices.shape}, "
+            f"got {deformed_volume_vertices.shape}"
+        )
+
+    if tets.ndim != 2 or tets.shape[1] != 4:
+        raise ValueError(f"tets must have shape (T, 4), got {tets.shape}")
+
+    if surface_vertices.ndim != 2 or surface_vertices.shape[1] != 3:
+        raise ValueError(
+            f"surface_vertices must have shape (N, 3), got {surface_vertices.shape}"
+        )
+
+    if surface_faces.ndim != 2 or surface_faces.shape[1] != 3:
+        raise ValueError(
+            f"surface_faces must have shape (F, 3), got {surface_faces.shape}"
+        )
+
+    if surf_map.shape != (surface_vertices.shape[0],):
+        raise ValueError(
+            "surf_map must have one entry per surface vertex, "
+            f"expected {(surface_vertices.shape[0],)}, got {surf_map.shape}"
+        )
+
+    if not np.all(np.isfinite(reference_volume_vertices)):
+        raise ValueError("reference_volume_vertices contains NaN or Inf")
+
+    if not np.all(np.isfinite(deformed_volume_vertices)):
+        raise ValueError("deformed_volume_vertices contains NaN or Inf")
+
+    # =========================================================
+    # 1. 计算全部四面体的真实 Jacobian
+    # =========================================================
+    reference_tets = reference_volume_vertices[tets]
+    deformed_tets = deformed_volume_vertices[tets]
+
+    Dm = np.stack(
+        [
+            reference_tets[:, 1] - reference_tets[:, 0],
+            reference_tets[:, 2] - reference_tets[:, 0],
+            reference_tets[:, 3] - reference_tets[:, 0],
+        ],
+        axis=2,
+    )
+
+    Ds = np.stack(
+        [
+            deformed_tets[:, 1] - deformed_tets[:, 0],
+            deformed_tets[:, 2] - deformed_tets[:, 0],
+            deformed_tets[:, 3] - deformed_tets[:, 0],
+        ],
+        axis=2,
+    )
+
+    det_Dm = np.linalg.det(Dm)
+    det_Ds = np.linalg.det(Ds)
+
+    valid_tets = np.abs(det_Dm) > det_eps
+
+    jacobian = np.full(
+        (tets.shape[0],),
+        np.nan,
+        dtype=np.float64,
+    )
+
+    # 等价于 det(Ds @ inverse(Dm))
+    jacobian[valid_tets] = (
+        det_Ds[valid_tets] / det_Dm[valid_tets]
+    )
+
+    valid_jacobian = jacobian[valid_tets]
+
+    if valid_jacobian.size == 0:
+        raise RuntimeError(
+            "No valid tetrahedral Jacobians were computed."
+        )
+
+    # =========================================================
+    # 2. 将 surface 三角形映射到 volume 顶点索引
+    # =========================================================
+    surface_faces_volume = surf_map[surface_faces]
+
+    # 一个 surface face 可能出现重复，因此一个 key 对应 face id 列表
+    surface_face_lookup = {}
+
+    for face_id, face in enumerate(surface_faces_volume):
+        key = tuple(
+            sorted(
+                (
+                    int(face[0]),
+                    int(face[1]),
+                    int(face[2]),
+                )
+            )
+        )
+        surface_face_lookup.setdefault(key, []).append(face_id)
+
+    surface_face_owners = [
+        [] for _ in range(surface_faces.shape[0])
+    ]
+
+    tet_local_faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (0, 2, 3),
+        (1, 2, 3),
+    )
+
+    # =========================================================
+    # 3. 寻找每个 surface face 相邻的四面体
+    # =========================================================
+    for tet_id, tet in enumerate(tets):
+        for local_face in tet_local_faces:
+            key = tuple(
+                sorted(
+                    (
+                        int(tet[local_face[0]]),
+                        int(tet[local_face[1]]),
+                        int(tet[local_face[2]]),
+                    )
+                )
+            )
+
+            matched_face_ids = surface_face_lookup.get(key)
+
+            if matched_face_ids is None:
+                continue
+
+            for face_id in matched_face_ids:
+                surface_face_owners[face_id].append(tet_id)
+
+    surface_face_jacobian = np.full(
+        (surface_faces.shape[0],),
+        np.nan,
+        dtype=np.float64,
+    )
+
+    mapped_surface_faces = np.zeros(
+        (surface_faces.shape[0],),
+        dtype=bool,
+    )
+
+    boundary_tet_ids = []
+
+    for face_id, owner_ids in enumerate(surface_face_owners):
+        if not owner_ids:
+            continue
+
+        owner_ids = np.asarray(owner_ids, dtype=np.int64)
+        owner_jacobian = jacobian[owner_ids]
+        owner_jacobian = owner_jacobian[
+            np.isfinite(owner_jacobian)
+        ]
+
+        if owner_jacobian.size == 0:
+            continue
+
+        # 正常边界面只有一个相邻四面体。
+        # 若异常情况下有多个，保守地取最小 J。
+        surface_face_jacobian[face_id] = float(
+            np.min(owner_jacobian)
+        )
+
+        mapped_surface_faces[face_id] = True
+        boundary_tet_ids.extend(owner_ids.tolist())
+
+    if not np.any(mapped_surface_faces):
+        raise RuntimeError(
+            "No source surface triangle could be mapped to an "
+            "adjacent tetrahedron. Check surface_faces and surf_map."
+        )
+
+    boundary_tet_ids = np.unique(
+        np.asarray(boundary_tet_ids, dtype=np.int64)
+    )
+
+    boundary_tet_jacobian = jacobian[boundary_tet_ids]
+    boundary_tet_jacobian = boundary_tet_jacobian[
+        np.isfinite(boundary_tet_jacobian)
+    ]
+
+    mapped_surface_jacobian = surface_face_jacobian[
+        mapped_surface_faces
+    ]
+
+    # =========================================================
+    # 4. 计算 reference surface 三角形面积
+    # =========================================================
+    triangles = surface_vertices[surface_faces]
+
+    triangle_area = 0.5 * np.linalg.norm(
+        np.cross(
+            triangles[:, 1] - triangles[:, 0],
+            triangles[:, 2] - triangles[:, 0],
+        ),
+        axis=1,
+    )
+
+    mapped_triangle_area = triangle_area[mapped_surface_faces]
+    total_mapped_area = float(mapped_triangle_area.sum())
+
+    # =========================================================
+    # 5. 全体四面体统计
+    # =========================================================
+    volume_negative = valid_jacobian < 0.0
+    volume_nonpositive = valid_jacobian <= 0.0
+    volume_low = valid_jacobian <= low_j_threshold
+
+    # =========================================================
+    # 6. 边界四面体统计
+    # =========================================================
+    boundary_negative = boundary_tet_jacobian < 0.0
+    boundary_nonpositive = boundary_tet_jacobian <= 0.0
+    boundary_low = boundary_tet_jacobian <= low_j_threshold
+
+    # =========================================================
+    # 7. surface 三角形统计
+    # =========================================================
+    surface_negative = mapped_surface_jacobian < 0.0
+    surface_nonpositive = mapped_surface_jacobian <= 0.0
+    surface_low = mapped_surface_jacobian <= low_j_threshold
+
+    if total_mapped_area > 0.0:
+        surface_negative_area_fraction = float(
+            mapped_triangle_area[surface_negative].sum()
+            / total_mapped_area
+        )
+
+        surface_low_area_fraction = float(
+            mapped_triangle_area[surface_low].sum()
+            / total_mapped_area
+        )
+    else:
+        surface_negative_area_fraction = 0.0
+        surface_low_area_fraction = 0.0
+
+    return {
+        "evaluation_stage": "after_registration",
+
+        "fit_mode": "exact_tetrahedral_deformation_gradient",
+
+        "definition": (
+            "Each source surface triangle inherits J=det(Ds @ inverse(Dm)) "
+            "from its adjacent boundary tetrahedron."
+        ),
+
+        "low_j_threshold": float(low_j_threshold),
+
+        # -----------------------------------------------------
+        # 全体四面体
+        # -----------------------------------------------------
+        "tetrahedron_count": int(tets.shape[0]),
+
+        "valid_tetrahedron_count": int(
+            valid_jacobian.size
+        ),
+
+        "invalid_reference_tetrahedron_count": int(
+            np.count_nonzero(~valid_tets)
+        ),
+
+        "volume_negative_jacobian_count": int(
+            np.count_nonzero(volume_negative)
+        ),
+
+        "volume_negative_jacobian_fraction": float(
+            np.mean(volume_negative)
+        ),
+
+        "volume_negative_jacobian_percentage": float(
+            100.0 * np.mean(volume_negative)
+        ),
+
+        "volume_nonpositive_jacobian_count": int(
+            np.count_nonzero(volume_nonpositive)
+        ),
+
+        "volume_nonpositive_jacobian_fraction": float(
+            np.mean(volume_nonpositive)
+        ),
+
+        "volume_low_jacobian_count": int(
+            np.count_nonzero(volume_low)
+        ),
+
+        "volume_low_jacobian_fraction": float(
+            np.mean(volume_low)
+        ),
+
+        "volume_low_jacobian_percentage": float(
+            100.0 * np.mean(volume_low)
+        ),
+
+        "volume_jacobian_min": float(
+            np.min(valid_jacobian)
+        ),
+
+        "volume_jacobian_mean": float(
+            np.mean(valid_jacobian)
+        ),
+
+        "volume_jacobian_median": float(
+            np.median(valid_jacobian)
+        ),
+
+        "volume_jacobian_max": float(
+            np.max(valid_jacobian)
+        ),
+
+        "volume_jacobian_percentiles_1_5_50": [
+            float(value)
+            for value in np.percentile(
+                valid_jacobian,
+                [1, 5, 50],
+            )
+        ],
+
+        # -----------------------------------------------------
+        # 与 surface 相邻的唯一边界四面体
+        # -----------------------------------------------------
+        "boundary_tetrahedron_count": int(
+            boundary_tet_jacobian.size
+        ),
+
+        "boundary_negative_jacobian_count": int(
+            np.count_nonzero(boundary_negative)
+        ),
+
+        "boundary_negative_jacobian_fraction": float(
+            np.mean(boundary_negative)
+            if boundary_tet_jacobian.size > 0
+            else 0.0
+        ),
+
+        "boundary_negative_jacobian_percentage": float(
+            100.0 * np.mean(boundary_negative)
+            if boundary_tet_jacobian.size > 0
+            else 0.0
+        ),
+
+        "boundary_nonpositive_jacobian_count": int(
+            np.count_nonzero(boundary_nonpositive)
+        ),
+
+        "boundary_low_jacobian_count": int(
+            np.count_nonzero(boundary_low)
+        ),
+
+        "boundary_low_jacobian_fraction": float(
+            np.mean(boundary_low)
+            if boundary_tet_jacobian.size > 0
+            else 0.0
+        ),
+
+        "boundary_jacobian_min": float(
+            np.min(boundary_tet_jacobian)
+        ),
+
+        "boundary_jacobian_percentiles_1_5_50": [
+            float(value)
+            for value in np.percentile(
+                boundary_tet_jacobian,
+                [1, 5, 50],
+            )
+        ],
+
+        # -----------------------------------------------------
+        # warped source surface 三角形
+        # -----------------------------------------------------
+        "surface_triangle_count": int(
+            surface_faces.shape[0]
+        ),
+
+        "mapped_surface_triangle_count": int(
+            np.count_nonzero(mapped_surface_faces)
+        ),
+
+        "unmapped_surface_triangle_count": int(
+            np.count_nonzero(~mapped_surface_faces)
+        ),
+
+        "surface_negative_triangle_count": int(
+            np.count_nonzero(surface_negative)
+        ),
+
+        "surface_negative_jacobian_fraction": float(
+            np.mean(surface_negative)
+        ),
+
+        "surface_negative_jacobian_percentage": float(
+            100.0 * np.mean(surface_negative)
+        ),
+
+        "surface_nonpositive_triangle_count": int(
+            np.count_nonzero(surface_nonpositive)
+        ),
+
+        "surface_nonpositive_jacobian_fraction": float(
+            np.mean(surface_nonpositive)
+        ),
+
+        "surface_low_jacobian_triangle_count": int(
+            np.count_nonzero(surface_low)
+        ),
+
+        "surface_low_jacobian_fraction": float(
+            np.mean(surface_low)
+        ),
+
+        "surface_low_jacobian_percentage": float(
+            100.0 * np.mean(surface_low)
+        ),
+
+        "surface_negative_reference_area_fraction": (
+            surface_negative_area_fraction
+        ),
+
+        "surface_negative_reference_area_percentage": float(
+            100.0 * surface_negative_area_fraction
+        ),
+
+        "surface_low_reference_area_fraction": (
+            surface_low_area_fraction
+        ),
+
+        "surface_low_reference_area_percentage": float(
+            100.0 * surface_low_area_fraction
+        ),
+
+        "surface_jacobian_min": float(
+            np.min(mapped_surface_jacobian)
+        ),
+
+        "surface_jacobian_mean": float(
+            np.mean(mapped_surface_jacobian)
+        ),
+
+        "surface_jacobian_median": float(
+            np.median(mapped_surface_jacobian)
+        ),
+
+        "surface_jacobian_max": float(
+            np.max(mapped_surface_jacobian)
+        ),
+
+        "surface_jacobian_percentiles_1_5_50": [
+            float(value)
+            for value in np.percentile(
+                mapped_surface_jacobian,
+                [1, 5, 50],
+            )
+        ],
+    }
+
+
+def surface_negative_jacobian_stats_old(
+    source_surface: np.ndarray,
+    warped_surface: np.ndarray,
+    k: int = 20,
+):
+    """Estimate final surface-point Jacobians by local KNN least squares.
+
+    This follows the requested point-cloud definition: fit the displacement
+    gradient around each source-surface vertex, form F = I + grad(U), and count
+    det(F) < 0. It is an evaluation metric only and is separate from the exact
+    per-tetrahedron Jacobians used by the FEM solver for step acceptance.
+    """
+    source = np.asarray(source_surface, dtype=np.float64)
+    warped = np.asarray(warped_surface, dtype=np.float64)
+    if source.ndim != 2 or source.shape[1] != 3:
+        raise ValueError(f"source_surface must have shape (N, 3), got {source.shape}")
+    if warped.shape != source.shape:
+        raise ValueError(
+            f"warped_surface must match source shape {source.shape}, got {warped.shape}"
+        )
+    if source.shape[0] < 2:
+        raise ValueError("surface Jacobian evaluation requires at least two points")
+    if not np.all(np.isfinite(source)) or not np.all(np.isfinite(warped)):
+        raise ValueError("surface points contain NaN or Inf")
+    if k < 1:
+        raise ValueError("k must be at least 1")
+
+    actual_k = min(int(k), source.shape[0] - 1)
+    displacement = warped - source
+    _, neighbors = cKDTree(source).query(source, k=actual_k + 1)
+    jacobian = np.empty((source.shape[0],), dtype=np.float64)
+    identity = np.eye(3, dtype=np.float64)
+    for index in range(source.shape[0]):
+        neighbor_ids = neighbors[index, 1:]
+        delta_x = source[neighbor_ids] - source[index]
+        delta_u = displacement[neighbor_ids] - displacement[index]
+        gradient_transpose, _, _, _ = np.linalg.lstsq(delta_x, delta_u, rcond=None)
+        deformation_gradient = identity + gradient_transpose.T
+        jacobian[index] = np.linalg.det(deformation_gradient)
+
+    negative_count = int(np.count_nonzero(jacobian < 0.0))
+    point_count = int(jacobian.size)
+    negative_fraction = float(negative_count / point_count)
+    return {
+        "surface_point_count": point_count,
+        "negative_jacobian_count": negative_count,
+        "negative_jacobian_fraction": negative_fraction,
+        "negative_jacobian_percentage": float(100.0 * negative_fraction),
+        "jacobian_min": float(jacobian.min()),
+        "jacobian_percentiles_1_5_50": [
+            float(value) for value in np.percentile(jacobian, [1, 5, 50])
+        ],
+        "k_neighbors": actual_k,
+        "fit_mode": "local_knn_lstsq",
+        "evaluation_stage": "after_registration_only",
+        "definition": "100 * count(det(I + local_grad_U) < 0) / source_surface_point_count",
+    }
+
+
 def maybe_eval_tre(
     source_txt: str,
     gt_txt: str,
@@ -2638,9 +3301,151 @@ def main(argv=None):
             result["surface_vertices_final"],
             surface_faces,
         )
-        grid_source = make_tet_ugrid(volume_points, tets)
-        grid_deformed = make_tet_ugrid(result["volume_vertices_final"], tets)
-        grid_deformed.save(os.path.join(args.outdir, "deformed_volume.vtu"))
+        target_metric_mesh = load_surface_mesh(args.target, quiet=True)
+        target_metric_points = np.asarray(
+                                            target_metric_mesh.points,
+                                            dtype=np.float64,
+                                        )
+
+        pre_surface_metrics = point_cloud_surface_metrics(
+            surface_points,
+            target_metric_points,
+        )
+
+        pre_surface_metrics.update(
+            {
+                "evaluation_stage": "before_registration",
+                "source_surface": os.path.abspath(source_used),
+                "target_surface": os.path.abspath(args.target),
+            }
+        )
+
+        # 配准后：warped source surface 与 target surface
+        post_surface_metrics = point_cloud_surface_metrics(
+            result["surface_vertices_final"],
+            target_metric_points,
+        )
+
+        post_surface_metrics.update(
+            {
+                "evaluation_stage": "after_registration",
+                "warped_source_surface": os.path.abspath(surface_path),
+                "target_surface": os.path.abspath(args.target),
+            }
+        )
+
+                # =====================================================
+        # 使用 FEM 四面体 mesh 计算真实 Jacobian
+        # =====================================================
+        surface_jacobian = surface_negative_jacobian_stats(
+            reference_volume_vertices=volume_points,
+            deformed_volume_vertices=result["volume_vertices_final"],
+            tets=tets,
+            surface_vertices=surface_points,
+            surface_faces=surface_faces,
+            surf_map=surf_map,
+            low_j_threshold=args.min_accepted_j,
+        )
+
+        # Jacobian 只属于配准后结果
+        post_surface_metrics[
+            "surface_negative_jacobian"
+        ] = surface_jacobian
+
+        # =====================================================
+        # 整理配准前后 surface 指标
+        # =====================================================
+        surface_metrics = {
+            "before_registration": pre_surface_metrics,
+
+            "after_registration": post_surface_metrics,
+
+            "improvement": {
+                "chamfer_symmetric_mean_reduction": float(
+                    pre_surface_metrics["chamfer_symmetric_mean"]
+                    - post_surface_metrics["chamfer_symmetric_mean"]
+                ),
+
+                "chamfer_distance_reduction": float(
+                    pre_surface_metrics["chamfer_distance"]
+                    - post_surface_metrics["chamfer_distance"]
+                ),
+
+                "hd95_reduction": float(
+                    pre_surface_metrics["hd95"]
+                    - post_surface_metrics["hd95"]
+                ),
+
+                "chamfer_symmetric_mean_improved": bool(
+                    post_surface_metrics["chamfer_symmetric_mean"]
+                    < pre_surface_metrics["chamfer_symmetric_mean"]
+                ),
+
+                "hd95_improved": bool(
+                    post_surface_metrics["hd95"]
+                    < pre_surface_metrics["hd95"]
+                ),
+            },
+        }
+
+        surface_metrics_path = os.path.join(
+            args.outdir,
+            "surface_metrics.json",
+        )
+
+        with open(
+            surface_metrics_path,
+            "w",
+            encoding="utf-8",
+        ) as stream:
+            json.dump(
+                surface_metrics,
+                stream,
+                indent=2,
+            )
+
+        log(
+            "[Surface test metrics] "
+            f"CD="
+            f"{pre_surface_metrics['chamfer_symmetric_mean']:.6f}"
+            f"->{post_surface_metrics['chamfer_symmetric_mean']:.6f} mm, "
+            f"HD95="
+            f"{pre_surface_metrics['hd95']:.6f}"
+            f"->{post_surface_metrics['hd95']:.6f} mm, "
+            f"negative_surface_J="
+            f"{surface_jacobian['surface_negative_triangle_count']}"
+            f"/{surface_jacobian['mapped_surface_triangle_count']} "
+            f"({surface_jacobian['surface_negative_jacobian_percentage']:.6f}%), "
+            f"negative_surface_area="
+            f"{surface_jacobian['surface_negative_reference_area_percentage']:.6f}%, "
+            f"negative_boundary_tet_J="
+            f"{surface_jacobian['boundary_negative_jacobian_count']}"
+            f"/{surface_jacobian['boundary_tetrahedron_count']} "
+            f"({surface_jacobian['boundary_negative_jacobian_percentage']:.6f}%), "
+            f"negative_volume_tet_J="
+            f"{surface_jacobian['volume_negative_jacobian_count']}"
+            f"/{surface_jacobian['valid_tetrahedron_count']} "
+            f"({surface_jacobian['volume_negative_jacobian_percentage']:.6f}%), "
+            f"minJ={surface_jacobian['volume_jacobian_min']:.6f}",
+            quiet,
+        )
+
+        grid_source = make_tet_ugrid(
+            volume_points,
+            tets,
+        )
+
+        grid_deformed = make_tet_ugrid(
+            result["volume_vertices_final"],
+            tets,
+        )
+
+        grid_deformed.save(
+            os.path.join(
+                args.outdir,
+                "deformed_volume.vtu",
+            )
+        )
         np.save(os.path.join(args.outdir, "history.npy"), result["history"])
         with open(os.path.join(args.outdir, "diagnostics.json"), "w", encoding="utf-8") as stream:
             json.dump(result["diagnostics"], stream, indent=2)
@@ -2720,6 +3525,76 @@ def main(argv=None):
             "final_robust_merit": result["final_robust_merit"],
             "min_j": min_j,
             "j_percentiles": j_percentiles,
+            # warped source surface 三角形统计
+            "surface_negative_jacobian_count": (
+                surface_jacobian[
+                    "surface_negative_triangle_count"
+                ]
+            ),
+
+            "surface_negative_jacobian_fraction": (
+                surface_jacobian[
+                    "surface_negative_jacobian_fraction"
+                ]
+            ),
+
+            "surface_negative_jacobian_percentage": (
+                surface_jacobian[
+                    "surface_negative_jacobian_percentage"
+                ]
+            ),
+
+            "surface_negative_jacobian_area_fraction": (
+                surface_jacobian[
+                    "surface_negative_reference_area_fraction"
+                ]
+            ),
+
+            "surface_negative_jacobian_area_percentage": (
+                surface_jacobian[
+                    "surface_negative_reference_area_percentage"
+                ]
+            ),
+
+            # 与 surface 相邻的唯一边界四面体统计
+            "boundary_negative_jacobian_count": (
+                surface_jacobian[
+                    "boundary_negative_jacobian_count"
+                ]
+            ),
+
+            "boundary_negative_jacobian_fraction": (
+                surface_jacobian[
+                    "boundary_negative_jacobian_fraction"
+                ]
+            ),
+
+            "boundary_negative_jacobian_percentage": (
+                surface_jacobian[
+                    "boundary_negative_jacobian_percentage"
+                ]
+            ),
+
+            # 整个 FEM 体网格统计
+            "volume_negative_jacobian_count": (
+                surface_jacobian[
+                    "volume_negative_jacobian_count"
+                ]
+            ),
+
+            "volume_negative_jacobian_fraction": (
+                surface_jacobian[
+                    "volume_negative_jacobian_fraction"
+                ]
+            ),
+
+            "volume_negative_jacobian_percentage": (
+                surface_jacobian[
+                    "volume_negative_jacobian_percentage"
+                ]
+            ),
+
+            "surface_jacobian_statistics": surface_jacobian,
             "pcg_fallback_count": reg.pcg_fallback_count,
             "mean_displacement": mean_u,
             "max_displacement": max_u,
@@ -2733,6 +3608,8 @@ def main(argv=None):
             "source_used_for_registration": os.path.abspath(source_used),
             "tet_cache": os.path.abspath(tet_cache),
             "target": os.path.abspath(args.target),
+            "surface_metrics": surface_metrics,
+            "surface_metrics_file": os.path.abspath(surface_metrics_path),
             "label_evaluation": labels,
             "label_evaluation_file": os.path.abspath(label_evaluation_path),
             "label_surface_directories": {
