@@ -17,6 +17,7 @@ The following update is medical image segmentation (applied to prostate segmenta
   <img src="picture/image-registration.png" width="500">
 </p>
 Red curve is warped mr prostate, White curve is target us prostate.
+
 ## Overview
 
 Cor-FEM performs non-rigid registration using a finite element method (FEM).
