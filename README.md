@@ -1,5 +1,7 @@
 # COR-FEM
 
+robot control codes are released at [https://github.com/Msx00/UR5e-UR7e_Control.git](https://github.com/Msx00/UR5e-UR7e_Control.git).
+
 **COR-FEM** is a FEM-based algorithm for non-rigid medical image registration.
 
 To the best of my (Shixing's) knowledge, this is one of the first non-linear FEM algorithms designed for non-rigid registration in ZBC (zero_boundary_condition) setting.
