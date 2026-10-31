@@ -1,3 +1,6 @@
+The paper has been accepted by IEEE ROBIO
+
+
 # COR-FEM
 
 robot control codes are released at [https://github.com/Msx00/UR5e-UR7e_Control.git](https://github.com/Msx00/UR5e-UR7e_Control.git).
